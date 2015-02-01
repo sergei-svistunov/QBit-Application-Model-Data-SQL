@@ -17,6 +17,7 @@ sub import {
     my %internal_keys = map {$_ => TRUE} qw(default);
     my @pk            = $package->_pk_();
     my %pk            = map {$_ => TRUE} @pk;
+    my @f_keys;
 
     foreach my $field_name (@pk, sort grep {!exists($pk{$_})} keys(%fields)) {
         my $field_class = $fields{$field_name}->{'type'};
@@ -24,17 +25,21 @@ sub import {
         $field_class = $package->_get_fields_namespace() . "::$field_class";
 
         require_class($field_class);
-        next unless $field_class->isa('QBit::Application::Model::Data::SQL::_::Field::Self');
-        push(
-            @db_fields,
-            {
-                (
-                    map {$_ => $fields{$field_name}->{$_}}
-                      grep {!exists($internal_keys{$_})} keys(%{$fields{$field_name}})
-                ),
-                name => $field_name
-            }
-        );
+
+        if ($field_class->isa('QBit::Application::Model::Data::SQL::_::Field::Self')) {
+            push(
+                @db_fields,
+                {
+                    (
+                        map {$_ => $fields{$field_name}->{$_}}
+                          grep {!exists($internal_keys{$_})} keys(%{$fields{$field_name}})
+                    ),
+                    name => $field_name
+                }
+              );
+        } elsif ($field_class->isa('QBit::Application::Model::Data::SQL::_::Field::Generate')) {
+            push(@f_keys, $field_class->foreign_keys($field_name, $fields{$field_name}));
+        }
     }
 
     my $table_meta = {
@@ -42,6 +47,7 @@ sub import {
             fields => \@db_fields,
             (@pk ? (primary_key => \@pk) : ()),
             ($package->can('_sql_indexes_') ? (indexes => [$package->_sql_indexes_()]) : ()),
+            (@f_keys ? (foreign_keys => \@f_keys) : ()),
         }
     };
 
